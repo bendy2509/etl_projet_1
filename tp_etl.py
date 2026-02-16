@@ -1,10 +1,11 @@
 import pandas as pd 
 
 
-def read_csv_file(file_name):
+def read_csv_file(file_name) -> pd.DataFrame:
     """
         Read a csv file using pandas
         :param file_name: File name
+        return: Un dataframe pandas
     """
     df = pd.read_csv(f'./sqlite_exports/{file_name}.csv', low_memory=False)
     if 'index' in df.columns:
@@ -16,13 +17,15 @@ def read_csv_file(file_name):
     return df
 
 
-def inspecter_data(file_name, df, head=5):
+def inspecter_data(file_name: str, df: pd.DataFrame, head=5) -> None:
     """
     Docstring for inspecter_data
     
     :param df: Le dataframe a inspecter
     :param head: Le nombre de lignes a afficher
     """
+    df = df.copy()
+
     print(f"=============== Inspecter les donnees de {file_name}  =================")
     print(f"La dimension du dataframe est : {df.shape}")
     print(f"Les types de donnees sont : {df.dtypes}")
@@ -34,14 +37,14 @@ def inspecter_data(file_name, df, head=5):
     print(f"=============== Fin de l'inspection des donnees sur {file_name} =================\n\n")
 
 
-def extract() -> dict:
+def extract() -> dict[str, pd.DataFrame]:
     """
     Docstring for extract_sources_data
     Charger les donnees sources a partir des fichiers csv et les stocker
     dans un dictionnaire de dataframe
     """
     # La liste des sources
-    df = [
+    fichiers = [
         'customers','orders','order_pymts',
         'products','geoloc','order_items',
         'order_reviews','sellers','translation',
@@ -50,7 +53,7 @@ def extract() -> dict:
     # Cree un dict vide
     data_dict = {}
 
-    for file in df:
+    for file in fichiers:
         data_dict[file] = read_csv_file(file)
 
     return data_dict
@@ -68,7 +71,7 @@ def parser_date(X, date_format='%m/%d/%Y %H:%M') -> pd.Series:
     return pd.to_datetime(X, format=date_format, errors='coerce')
 
 
-def parser_date_columns(dfs) -> dict:
+def parser_date_columns(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     '''
     Docstring for parser_date_columns
     Parser les colonnes de date dans les dataframes du dictionnaire
@@ -77,7 +80,7 @@ def parser_date_columns(dfs) -> dict:
     '''
     # Convertir les colonnes de date en format datetime
     cols_date = {
-        'orders_items': ['shipping_limit_date'],
+        'order_items': ['shipping_limit_date'],
         'orders': ['order_purchase_timestamp','order_approved_at','order_delivered_carrier_date','order_delivered_customer_date','order_estimated_delivery_date'],
         'order_reviews': ['review_creation_date','review_answer_timestamp'],
     }
@@ -94,7 +97,7 @@ def parser_date_columns(dfs) -> dict:
     return dfs
 
 
-def detecter_et_supprimer_doublons(df: pd.DataFrame, table_name) -> pd.DataFrame:
+def detecter_et_supprimer_doublons(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
     """
     Docstring for detecter_et_supprimer_doublons
     Detecter et supprimer les doublons dans un dataframe
@@ -116,16 +119,93 @@ def detecter_et_supprimer_doublons(df: pd.DataFrame, table_name) -> pd.DataFrame
     return df
 
 
-def transform(dfs):
+def supprimer_colonnes_inutiles(df: pd.DataFrame, table_name) -> pd.DataFrame:
+    """
+    Docstring for supprimer_colonnes_inutiles
+    Supprimer les colonnes inutiles dans un dataframe
+    :param df: Le dataframe a traiter
+    :param table_name: Le nom de la table
+    return: Le dataframe sans les colonnes inutiles
+    """
+    # Colonnes textuelles lourdes non utilisees dans les agregations du TP
+    colonnes_a_supprimer = {
+        'order_reviews': ['review_comment_title', 'review_comment_message'],
+    }
+
+    cols = colonnes_a_supprimer.get(table_name, ())
+    if cols:
+        cols_existantes = [col for col in cols if col in df.columns]
+        if cols_existantes:
+            df = df.drop(columns=cols_existantes)
+            print(
+                f"Colonnes supprimees dans la table {table_name}: "
+                f"{', '.join(cols_existantes)}"
+            )
+
+    return df
+
+def gerer_valeurs_manquantes(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
+    """
+    Docstring for gerer_valeurs_manquantes
+    Gerer les valeurs manquantes dans un dataframe
+    :param df: Le dataframe a traiter
+    :param table_name: Le nom de la table
+    return: Le dataframe avec les valeurs manquantes geres
+    """
+    print(f"--- Traitement des NaN pour {table_name} ---")
+    
+    if table_name == 'products':
+        # Categories manquantes -> 'Unknown'
+        if 'product_category_name' in df.columns:
+            nb_nan = df['product_category_name'].isna().sum()
+            pourcentage_nan = (nb_nan) / len(df['product_category_name']) * 100
+
+            print(f"Nombre de categories manquantes : {nb_nan} ({pourcentage_nan:.2f}%)")
+
+            df['product_category_name'] = df['product_category_name'].fillna('Inconnu')
+            print(f"Remplacement de {nb_nan} categories manquantes par 'Inconnu'.\n\n")
+        
+            # Calculer la longueur de chaque nom de catégorie
+            df['product_name_lenght'] = df['product_category_name'].str.len()
+
+        # Supprimer pour les autres colonnes
+        cols_meta = [
+            'product_description_lenght',
+            'product_photos_qty', 'product_width_cm', 'product_length_cm',
+            'product_height_cm', 'product_weight_g',
+        ]
+
+        for col in cols_meta:
+            if col in df.columns:
+                # Rempli par 0
+                df[col] = df[col].fillna(0)
+
+    return df
+
+
+def transform(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """
     Docstring for transform
     Transformer les donnees sources pour les rendre plus propres
     """
+
+    # Transformer les colonnes de date en format datetime
     dfs = parser_date_columns(dfs)
 
     # Supprimer les doublons dans les tables
     for table_name, df in dfs.items():
         dfs[table_name] = detecter_et_supprimer_doublons(df, table_name)
+
+    # Suppression des colonnes inutiles
+    for table_name, df in dfs.items():
+        dfs[table_name] = supprimer_colonnes_inutiles(df, table_name)
+    
+
+    # Gerer les valeurs manquantes
+    for table_name, df in dfs.items():
+        if df.isna().sum().sum() > 0:
+            # Gerer les valeurs manquantes
+            dfs[table_name] = gerer_valeurs_manquantes(df, table_name)
 
     return dfs
 
@@ -193,6 +273,7 @@ def main():
 
         elif choix == '0':
             break
+
 
 if __name__ == "__main__":
     main()
