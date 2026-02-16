@@ -59,7 +59,7 @@ def extract() -> dict[str, pd.DataFrame]:
     return data_dict
 
 
-def parser_date(X, date_format='%m/%d/%Y %H:%M') -> pd.Series:
+def parser_date(X) -> pd.Series:
     """
     Docstring for parser_date
     Pour parser une colonne entiere de date
@@ -68,7 +68,7 @@ def parser_date(X, date_format='%m/%d/%Y %H:%M') -> pd.Series:
     :param date_format: Le format de la date a parser
     return: La date au format datetime de pandas
     """
-    return pd.to_datetime(X, format=date_format, errors='coerce')
+    return pd.to_datetime(X, errors='coerce')
 
 
 def parser_date_columns(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
@@ -119,6 +119,23 @@ def detecter_et_supprimer_doublons(df: pd.DataFrame, table_name: str) -> pd.Data
     return df
 
 
+def nbre_nan_pourcentage(df: pd.DataFrame) -> pd.DataFrame:
+    '''
+    Docstring for nbre_nan_pourcentage
+    Afficher le nombre et le pourcentage de valeurs manquantes dans un dataframe
+    :param df: Le dataframe a traiter
+    :type df: pd.DataFrame
+    return: Le dataframe avec une colonne de pourcentage de valeurs manquantes
+    rtype: DataFrame
+    '''
+    nb_nan = df.isna().sum().sum()
+    pourcentage_nan = (nb_nan) / len(df) * 100
+
+    print(f"Nombre de valeurs manquantes : {nb_nan} ({pourcentage_nan:.2f}%)")
+
+    return df
+
+
 def supprimer_colonnes_inutiles(df: pd.DataFrame, table_name) -> pd.DataFrame:
     """
     Docstring for supprimer_colonnes_inutiles
@@ -144,6 +161,64 @@ def supprimer_colonnes_inutiles(df: pd.DataFrame, table_name) -> pd.DataFrame:
 
     return df
 
+
+def traiter_nan_products(df: pd.DataFrame) -> pd.DataFrame:
+    '''
+    Docstring for traiter_nan_products
+    
+    :param df: Le dataframe products a traiter
+    :type df: pd.DataFrame
+    :return: Le dataframe products avec les valeurs manquantes geres
+    :rtype: DataFrame
+    '''
+    df = nbre_nan_pourcentage(df)
+
+    # Categories manquantes -> 'Unknown'
+    if 'product_category_name' in df.columns:
+        # Nombre de val manquantes dans la colonne product_category_name
+        nb_nan_col_name = df['product_category_name'].isna().sum()
+
+        df['product_category_name'] = df['product_category_name'].fillna('Inconnu')
+        print(f"Remplacement de {nb_nan_col_name} categories manquantes par 'Inconnu'.\n\n")
+
+    # TODO: Rendre modulaire
+    if 'product_description_lenght' in df.columns:
+        # Calculer la longueur de chaque nom de categorie
+        df['product_name_lenght'] = df['product_category_name'].str.len()
+
+    # Remplir avec des 0 pour les autres colonnes
+    cols_meta = [
+        'product_description_lenght',
+        'product_photos_qty', 'product_width_cm', 'product_length_cm',
+        'product_height_cm', 'product_weight_g',
+    ]
+
+    for col in cols_meta:
+        if col in df.columns:
+            # Rempli par 0
+            df[col] = df[col].fillna(0)
+    
+    return df
+
+
+def traiter_nan_orders(df: pd.DataFrame) -> pd.DataFrame:
+    '''
+    Docstring for traiter_nan_orders
+    
+    :param df: Description
+    :type df: pd.DataFrame
+    :return: Description
+    :rtype: DataFrame
+    '''
+    # On supprime les nan dans orders TODO: Dans le rapport
+    df = nbre_nan_pourcentage(df)
+
+    df = df.dropna()
+    print(f"Valeurs manquantes supprimees dans orders. Nouvelle dimension : {df.shape}\n\n")
+
+    return df
+
+
 def gerer_valeurs_manquantes(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
     """
     Docstring for gerer_valeurs_manquantes
@@ -155,30 +230,10 @@ def gerer_valeurs_manquantes(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
     print(f"--- Traitement des NaN pour {table_name} ---")
     
     if table_name == 'products':
-        # Categories manquantes -> 'Unknown'
-        if 'product_category_name' in df.columns:
-            nb_nan = df['product_category_name'].isna().sum()
-            pourcentage_nan = (nb_nan) / len(df['product_category_name']) * 100
+        df = traiter_nan_products(df)
 
-            print(f"Nombre de categories manquantes : {nb_nan} ({pourcentage_nan:.2f}%)")
-
-            df['product_category_name'] = df['product_category_name'].fillna('Inconnu')
-            print(f"Remplacement de {nb_nan} categories manquantes par 'Inconnu'.\n\n")
-        
-            # Calculer la longueur de chaque nom de catégorie
-            df['product_name_lenght'] = df['product_category_name'].str.len()
-
-        # Supprimer pour les autres colonnes
-        cols_meta = [
-            'product_description_lenght',
-            'product_photos_qty', 'product_width_cm', 'product_length_cm',
-            'product_height_cm', 'product_weight_g',
-        ]
-
-        for col in cols_meta:
-            if col in df.columns:
-                # Rempli par 0
-                df[col] = df[col].fillna(0)
+    elif table_name == 'orders':
+        df = traiter_nan_orders(df)
 
     return df
 
