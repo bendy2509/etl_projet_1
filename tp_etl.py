@@ -37,7 +37,7 @@ def inspecter_data(file_name: str, df: pd.DataFrame, head=5) -> None:
     print(f"=============== Fin de l'inspection des donnees sur {file_name} =================\n\n")
 
 
-def extract() -> dict[str, pd.DataFrame]:
+def extract_sources() -> dict[str, pd.DataFrame]:
     """
     Docstring for extract_sources_data
     Charger les donnees sources a partir des fichiers csv et les stocker
@@ -68,6 +68,7 @@ def parser_date(X) -> pd.Series:
     :param date_format: Le format de la date a parser
     return: La date au format datetime de pandas
     """
+    # TODO: La necessite de la fonction
     return pd.to_datetime(X, errors='coerce')
 
 
@@ -108,7 +109,8 @@ def detecter_et_supprimer_doublons(df: pd.DataFrame, table_name: str) -> pd.Data
     # Detecter les doublons
     doublons = df.duplicated()
     nb_doublons = doublons.sum()
-    print(f"Nombre de doublons dans la table {table_name} : {nb_doublons}")
+    percent = (nb_doublons / df.size) * 100
+    print(f"Nombre de doublons dans la table {table_name} : {nb_doublons} ({percent:.2f}%).")
 
     # Supprimer les doublons
     if nb_doublons > 0:
@@ -119,21 +121,22 @@ def detecter_et_supprimer_doublons(df: pd.DataFrame, table_name: str) -> pd.Data
     return df
 
 
-def nbre_nan_pourcentage(df: pd.DataFrame) -> pd.DataFrame:
+def nbre_nan_pourcentage(df: pd.DataFrame) -> tuple[pd.DataFrame, float]:
     '''
     Docstring for nbre_nan_pourcentage
     Afficher le nombre et le pourcentage de valeurs manquantes dans un dataframe
+    
     :param df: Le dataframe a traiter
     :type df: pd.DataFrame
-    return: Le dataframe avec une colonne de pourcentage de valeurs manquantes
-    rtype: DataFrame
+    :return: Le dataframe avec une colonne de pourcentage de valeurs manquantes
+    :rtype: DataFrame
     '''
     nb_nan = df.isna().sum().sum()
-    pourcentage_nan = (nb_nan) / len(df) * 100
+    pourcentage_nan = (nb_nan / df.size) * 100
 
     print(f"Nombre de valeurs manquantes : {nb_nan} ({pourcentage_nan:.2f}%)")
 
-    return df
+    return df, pourcentage_nan
 
 
 def supprimer_colonnes_inutiles(df: pd.DataFrame, table_name) -> pd.DataFrame:
@@ -171,7 +174,7 @@ def traiter_nan_products(df: pd.DataFrame) -> pd.DataFrame:
     :return: Le dataframe products avec les valeurs manquantes geres
     :rtype: DataFrame
     '''
-    df = nbre_nan_pourcentage(df)
+    df, percent = nbre_nan_pourcentage(df)
 
     # Categories manquantes -> 'Unknown'
     if 'product_category_name' in df.columns:
@@ -181,41 +184,17 @@ def traiter_nan_products(df: pd.DataFrame) -> pd.DataFrame:
         df['product_category_name'] = df['product_category_name'].fillna('Inconnu')
         print(f"Remplacement de {nb_nan_col_name} categories manquantes par 'Inconnu'.\n\n")
 
-    # TODO: Rendre modulaire
-    if 'product_description_lenght' in df.columns:
-        # Calculer la longueur de chaque nom de categorie
-        df['product_name_lenght'] = df['product_category_name'].str.len()
-
-    # Remplir avec des 0 pour les autres colonnes
-    cols_meta = [
-        'product_description_lenght',
-        'product_photos_qty', 'product_width_cm', 'product_length_cm',
-        'product_height_cm', 'product_weight_g',
-    ]
-
-    for col in cols_meta:
+    cols_zero = ['product_description_lenght', 'product_photos_qty']
+    for col in cols_zero:
         if col in df.columns:
-            # Rempli par 0
             df[col] = df[col].fillna(0)
-    
-    return df
 
-
-def traiter_nan_orders(df: pd.DataFrame) -> pd.DataFrame:
-    '''
-    Docstring for traiter_nan_orders
-    
-    :param df: Description
-    :type df: pd.DataFrame
-    :return: Description
-    :rtype: DataFrame
-    '''
-    # On supprime les nan dans orders TODO: Dans le rapport
-    df = nbre_nan_pourcentage(df)
-
+    print("--- Analyse products (Apres) ---")
+    df_temp, percent = nbre_nan_pourcentage(df)
+    print("Suppression en cours...\n\n")
+    # Supprimer les autres nan dans la table
     df = df.dropna()
-    print(f"Valeurs manquantes supprimees dans orders. Nouvelle dimension : {df.shape}\n\n")
-
+    
     return df
 
 
@@ -223,6 +202,7 @@ def gerer_valeurs_manquantes(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
     """
     Docstring for gerer_valeurs_manquantes
     Gerer les valeurs manquantes dans un dataframe
+    
     :param df: Le dataframe a traiter
     :param table_name: Le nom de la table
     return: Le dataframe avec les valeurs manquantes geres
@@ -233,12 +213,13 @@ def gerer_valeurs_manquantes(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
         df = traiter_nan_products(df)
 
     elif table_name == 'orders':
-        df = traiter_nan_orders(df)
+        # explication dans le rapport
+        return df
 
     return df
 
 
-def transform(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+def transform_data(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """
     Docstring for transform
     Transformer les donnees sources pour les rendre plus propres
@@ -254,7 +235,6 @@ def transform(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     # Suppression des colonnes inutiles
     for table_name, df in dfs.items():
         dfs[table_name] = supprimer_colonnes_inutiles(df, table_name)
-    
 
     # Gerer les valeurs manquantes
     for table_name, df in dfs.items():
@@ -289,7 +269,7 @@ def main():
 
         if choix == '1':
             # Extraire les donnees sources
-            dfs = extract()
+            dfs = extract_sources()
             print("Donnees chargees avec succes.")
         
         elif choix == '2':
@@ -317,7 +297,7 @@ def main():
                 print("Erreur : Chargez d'abord les donnees.")
             else:
                 # Tranformer les donnees
-                final_tables = transform(dfs)
+                final_tables = transform_data(dfs)
                 print("Transformation terminee.")
 
         elif choix == '5':
@@ -332,26 +312,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-def _extract():
-    df = extract()
-    df_customers = df['customers']
-    df_orders = df['orders']
-    df_orders_customers = pd.merge(df_orders, df_customers, on='customer_id')
-    print(df_orders_customers.shape)
-
-    df_payments = read_csv_file('order_pymts')
-
-    df_orders_payments = pd.merge(df_orders, df_payments,
-                                  left_on='order_id', 
-                                  right_on='order_id', how='outer', indicator=True)
-
-    print(df_orders_payments.shape)
-    print(df_orders_payments['_merge'].value_counts())
-    df_missing_payment = df_orders_payments[df_orders_payments['_merge'] == 'left_only']
-
-    print(df_missing_payment)

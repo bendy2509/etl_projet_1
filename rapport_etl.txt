@@ -1,0 +1,30 @@
+PROJET ETL OLIST - RAPPORT D'AVANCEMENT
+Date : 17 Fevrier 2026
+
+1. EXTRACTION (Extract)
+-----------------------
+- Chargement reussi des 9 fichiers CSV sources (option low_memory activee).
+- Verification des dimensions et des types effectuee pour chaque table.
+
+2. Les Doublons
+    on a trouver 261831 doublons dans la table geoloc, ce qui represente 5.24% de la table.
+
+2. NETTOYAGE (Clean)
+--------------------
+- Dates : Conversion de toutes les colonnes temporelles en datetime.
+- Orders :  Conservation des dates de livraison manquantes (NaT) pour ne pas 
+            supprimer les commandes en cours.
+- order_reviews : On a supprimer les colonnes 'review_comment_title' et 'review_comment_message'
+
+- Products :
+    * On a detecter 2448 valeurs manquantes dans la table Products, soit 0.83% des donnees
+        - On remplace les noms des categories par Inconnu soit 610 de ces valeurs manquantes
+        - et supprime les autres lignes ayant des valeurs manquantes
+    * Suppression ciblee des produits sans poids/dimensions/longueur_nom physiques.
+
+3. ARCHITECTURE
+--------------------
+- Script modulaire avec menu interactif.
+- Gestion centralisee via un dictionnaire de DataFrames.
+- Calcul mathematique precis du taux de remplissage (%) des donnees.
+
