@@ -219,6 +219,162 @@ def gerer_valeurs_manquantes(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
     return df
 
 
+def analyser_qualite_donnees(data: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Analyse la qualite des donnees et les relations entre tables
+    
+    :param data: Le dictionnaire de DataFrame netoye
+    :type data: Dictionnaire
+    :return: Un type de dataframe
+    """
+    print("\n" + "="*60)
+    print("ANALYSE DE LA QUALITE DES DONNEES")
+    print("="*60)
+    
+    # Analyse relation commandes avec les clients
+    print("\n--- RELATION COMMANDES-CLIENTS ---")
+    df_orders_customers = analyser_commandes_clients(
+        data['orders'], data['customers']
+    )
+    
+    # Analyse relation commandes-paiements
+    print("\n--- RELATION COMMANDES - PAIEMENTS ---")
+    df_orders_payments, df_missing_payment = analyser_commandes_paiements(
+        data['orders'], data['order_pymts']
+    )
+    
+    return df_orders_customers, df_orders_payments, df_missing_payment
+
+
+def analyser_commandes_clients(orders: pd.DataFrame, customers: pd.DataFrame) -> pd.DataFrame:
+    """
+    Analyse la relation entre les commandes et les clients
+    
+    :param orders: La table orders
+    :param customers: La table customers
+    """
+    print(f"Commandes: {orders.shape}, Clients: {customers.shape}")
+    
+    # Jointure
+    df_merged = pd.merge(orders, customers, on='customer_id', how='outer', indicator=True)
+    
+    print(f"Apres jointure: {df_merged.shape}")
+    print("\nRepartition des jointures :")
+    print(df_merged['_merge'].value_counts())
+    
+    # Analyses sur la table merge
+    left_only = df_merged[df_merged['_merge'] == 'left_only']
+    right_only = df_merged[df_merged['_merge'] == 'right_only']
+    
+    if len(left_only) > 0:
+        print(f"\n{len(left_only)} commandes sans client correspondant")
+        print(left_only[['order_id', 'customer_id']].head())
+    
+    if len(right_only) > 0:
+        print(f"\n{len(right_only)} clients sans commande")
+    
+    return df_merged
+
+
+def analyser_commandes_paiements(orders: pd.DataFrame, payments: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Analyse la relation entre les commandes et les paiements
+    
+    :param orders: la table orders
+    "param payments: la table order_pymts
+    """
+    print(f"Commandes: {orders.shape}, Paiements: {payments.shape}")
+    
+    # Jointure 
+    df_merged = pd.merge(
+        orders, 
+        payments,
+        left_on='order_id', 
+        right_on='order_id', 
+        how='outer', 
+        indicator=True
+    )
+    
+    print(f"\nApres jointure: {df_merged.shape}")
+    print("\nRepartition des jointures:")
+    print(df_merged['_merge'].value_counts())
+    
+    # Identifier les commandes sans paiement
+    df_missing_payment = df_merged[df_merged['_merge'] == 'left_only']
+    
+    if len(df_missing_payment) > 0:
+        print(f"\n{len(df_missing_payment)} commandes sans paiement")
+    
+    return df_merged, df_missing_payment
+
+
+def create_fact_order_items_table(data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """
+    Cree la table de faits en joignant order_items avec les dimensions
+
+    :param data: Le dictionnaire
+    :return: Un dictionnaire
+    """
+    print("\n" + "="*50)
+    print("TRANSFORMATION: Creation de la table de faits")
+    print("="*50)
+    
+    
+    # Analyse sur les donnees
+    df_orders_customers, df_orders_payments, df_missing = analyser_qualite_donnees(data)
+    
+    # Configuration des jointures
+    jointures = [
+        ('orders', 'order_id'),
+        ('customers', 'customer_id'),
+        ('sellers', 'seller_id'),
+        ('products', 'product_id')
+    ]
+    
+    # Verification des tables dans le dict
+    tables_requises = ['order_items'] + [j[0] for j in jointures]
+    
+    missing = [t for t in tables_requises if t not in data]
+    if missing:
+        print(f"ERREUR: Tables manquantes: {missing}")
+        return data
+    
+    # Construction
+    fact = data['order_items'].copy()
+    print(f"\nDimension initiale order_items: {fact.shape}")
+    
+    for table, key in jointures:
+        print(f"Jointure avec {table}...")
+        fact = fact.merge(data[table], on=key, how='outer')
+    
+    # Calculs
+    print("\nCALCULS DES METRIQUES")
+    fact['item_total'] = fact['price'] + fact['freight_value']
+    fact['year_month'] = fact['order_purchase_timestamp'].dt.to_period('M').astype(str)
+    
+    if 'order_delivered_customer_date' in fact.columns:
+        fact['delivery_days'] = (
+            fact['order_delivered_customer_date'] - fact['order_purchase_timestamp']
+        ).dt.days
+        
+        print(f"\nStatistiques de livraison:")
+        print(f"Moyenne: {fact['delivery_days'].mean():.1f} jours")
+        print(f"Mediane: {fact['delivery_days'].median():.1f} jours")
+        print(f"Min: {fact['delivery_days'].min():.1f} jours")
+        print(f"Max: {fact['delivery_days'].max():.1f} jours")
+    
+    # Ajouter cette table de fait dans le dictionnaire
+    data['fact_order_items'] = fact
+    print(f"\nTable de faits finale: {fact.shape}")
+    
+    # Ajouter les autres tables
+    data['orders_customers'] = df_orders_customers
+    data['orders_payments'] = df_orders_payments
+    data['missing_payments'] = df_missing
+    
+    return data
+
+
 def transform_data(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """
     Docstring for transform
@@ -241,6 +397,9 @@ def transform_data(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         if df.isna().sum().sum() > 0:
             # Gerer les valeurs manquantes
             dfs[table_name] = gerer_valeurs_manquantes(df, table_name)
+    
+    # Creer et ajouter le jeu de faits
+    dfs = create_fact_order_items_table(data=dfs)
 
     return dfs
 
