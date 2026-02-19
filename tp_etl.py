@@ -74,10 +74,11 @@ def parser_date(X) -> pd.Series:
 
 def parser_date_columns(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     '''
-    Docstring for parser_date_columns
+    Docstring for parser_date_columns 
     Parser les colonnes de date dans les dataframes du dictionnaire
+
     :param dfs: Le dictionnaire de dataframes
-    return: Le dictionnaire de dataframes avec les colonnes de date parsees
+    :return: Le dictionnaire de dataframes avec les colonnes de date parsees
     '''
     # Convertir les colonnes de date en format datetime
     cols_date = {
@@ -106,6 +107,19 @@ def detecter_et_supprimer_doublons(df: pd.DataFrame, table_name: str) -> pd.Data
     :param table_name: Le nom de la table
     return: Le dataframe sans doublons
     """
+    if table_name == 'geoloc':
+        # On regarde uniquement la colonne du code postal pour les doublons
+        nb_doublons_zip = df.duplicated(subset=['geolocation_zip_code_prefix']).sum()
+        
+        if nb_doublons_zip > 0:
+            print(f"Geoloc : {nb_doublons_zip} doublons de codes postaux detectes.")
+            print(f"Dimension avant suppression : {df.shape}")
+            # Supprimer tous les doubles de zipcode et garder les premiers
+            df = df.drop_duplicates(subset=['geolocation_zip_code_prefix'], keep='first')
+            print(f"Doublons supprimes. Nouvelle dimension : {df.shape}\n")
+        
+        return df
+    
     # Detecter les doublons
     doublons = df.duplicated()
     nb_doublons = doublons.sum()
@@ -213,6 +227,7 @@ def gerer_valeurs_manquantes(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
         df = traiter_nan_products(df)
 
     elif table_name == 'orders':
+        print("Aucune transformation utile pour la table orders.")
         # explication dans le rapport
         return df
 
@@ -232,7 +247,7 @@ def analyser_qualite_donnees(data: dict[str, pd.DataFrame]) -> tuple[pd.DataFram
     print("="*60)
     
     # Analyse relation commandes avec les clients
-    print("\n--- RELATION COMMANDES-CLIENTS ---")
+    print("\n--- RELATION COMMANDES - CLIENTS ---")
     df_orders_customers = analyser_commandes_clients(
         data['orders'], data['customers']
     )
@@ -269,9 +284,13 @@ def analyser_commandes_clients(orders: pd.DataFrame, customers: pd.DataFrame) ->
     if len(left_only) > 0:
         print(f"\n{len(left_only)} commandes sans client correspondant")
         print(left_only[['order_id', 'customer_id']].head())
-    
+    else:
+        print("Il n'y a aucune commande sans client")
+
     if len(right_only) > 0:
-        print(f"\n{len(right_only)} clients sans commande")
+        print(f"\n{len(right_only)} clients sans commande !")
+    else:
+        print("Il n'y aucun client client sans commande !")
     
     return df_merged
 
@@ -379,6 +398,91 @@ def create_fact_order_items_table(data: dict[str, pd.DataFrame]) -> dict[str, pd
     
     return data
 
+
+def create_fact_customers_geoloc_table(data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    '''
+    Docstring for create_fact_customers_geoloc_table
+    Cree une table de faits  clients - localisation
+    
+    :param data: Le dictionnaire netoye
+    :type data: dict[str, pd.DataFrame]
+    :return: Le dictionnaire contenant le jeu de faits
+    :rtype: dict[str, DataFrame]
+    '''
+    print("\n" + "="*50)
+    print("TRANSFORMATION: Creation de la table de faits customers - geoloc")
+    print("="*50)
+    
+    # Verification des tables necessaires
+    required_tables = ['customers', 'geoloc']
+    for table in required_tables:
+        if table not in data:
+            print(f"ERREUR: Table {table} manquante!")
+            return data
+    
+    # Copie des dataframes
+    customers = data['customers'].copy()
+    geoloc = data['geoloc'].copy()
+    
+    print(f"\nDimensions initiales:")
+    print(f"  customers: {customers.shape}")
+    print(f"  geoloc: {geoloc.shape}")
+    
+    # ANALYSE DES CODES POSTAUX
+    print("\nANALYSE DES CODES POSTAUX")
+    
+    if 'customer_zip_code_prefix' in customers or 'geolocation_zip_code_prefix' in geoloc:
+        # Extraire les codes postaux uniques des clients
+        customer_zip = customers['customer_zip_code_prefix'].unique()
+        print(f"Codes postaux clients: {len(customer_zip)} uniques")
+        
+        # Codes postaux disponibles dans geoloc
+        geoloc_zip = geoloc['geolocation_zip_code_prefix'].unique()
+        print(f"Codes postaux geoloc: {len(geoloc_zip)} uniques")
+    else:
+        print("La colonne geolocation_zip_code_prefix n'existe pas a la fois dans les deux tables")
+        return data
+    
+    # Codes postaux clients non trouves dans geoloc
+    missing_zips = set(customer_zip) - set(geoloc_zip)
+    if missing_zips:
+        print(f"\n{len(missing_zips)} codes postaux clients non trouves dans geoloc")
+    
+    # JOINTURE
+    print("\nCREATION DE LA TABLE DE FAITS")
+
+    # Jointure customers avec geoloc
+    fact = pd.merge(
+        customers,
+        geoloc,
+        left_on='customer_zip_code_prefix',
+        right_on='geolocation_zip_code_prefix',
+        how='left',
+        indicator=True
+    )
+    
+    print(f"Dimension apres jointure: {fact.shape}")
+    print("\nRepartition des jointures:")
+    print(fact['_merge'].value_counts())
+    
+    # ANALYSE DES CLIENTS SANS GEOLOC
+    missing_geoloc = fact[fact['_merge'] == 'left_only']
+    if len(missing_geoloc) > 0:
+        print(f"\n{len(missing_geoloc)} clients sans correspondance geoloc")
+        print(f"Soit {len(missing_geoloc)/len(fact)*100:.1f}% des clients")
+    
+    # VERIFICATIONS FINALES
+    print("\nVERIFICATIONS FINALES")
+    print(f"Dimension finale: {fact.shape}")
+    print(f"Colonnes: {fact.columns.tolist()}")
+    
+    
+    # Stocker dans le dictionnaire
+    data['fact_customers_geoloc'] = fact
+    
+    print(f"\nTable de faits customers-geoloc creee avec succes!")
+    
+    return data
 
 def calculer_metriques(data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """
@@ -497,6 +601,7 @@ def transform_data(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     
     # Creer et ajouter le jeu de faits
     dfs = create_fact_order_items_table(data=dfs)
+    dfs = create_fact_customers_geoloc_table(data=dfs)
     
     #calculer les metriques
     

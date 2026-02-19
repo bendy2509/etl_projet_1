@@ -344,7 +344,7 @@ def calculate_metrics(data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
 # PARTIE 3: FONCTIONS DE CHARGEMENT
 # ============================================================================
 
-def save_to_csv(data, output_dir='outputs'):
+def save_to_csv(data: dict[str, pd.DataFrame], output_dir: str ='outputs'):
     """
     Sauvegarde les DataFrames en fichiers CSV
     :param data: dictionnaire de DataFrames
