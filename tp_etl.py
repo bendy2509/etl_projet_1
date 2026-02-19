@@ -347,11 +347,16 @@ def create_fact_order_items_table(data: dict[str, pd.DataFrame]) -> dict[str, pd
         print(f"Jointure avec {table}...")
         fact = fact.merge(data[table], on=key, how='outer')
     
-    # Calculs
-    print("\nCALCULS DES METRIQUES")
+    # Calculs necessaire pour calculer les metriques
+    # print("\nCALCULS DES METRIQUES")
+    # ajout de  item total: revenu total par article
+
     fact['item_total'] = fact['price'] + fact['freight_value']
+    # transforme le la date complete en mois pour les analyses mensuelles
+    # exp: 2026/02
     fact['year_month'] = fact['order_purchase_timestamp'].dt.to_period('M').astype(str)
     
+    # calcul delai de livraison (date livraison - date commande)
     if 'order_delivered_customer_date' in fact.columns:
         fact['delivery_days'] = (
             fact['order_delivered_customer_date'] - fact['order_purchase_timestamp']
@@ -375,6 +380,98 @@ def create_fact_order_items_table(data: dict[str, pd.DataFrame]) -> dict[str, pd
     return data
 
 
+def calculer_metriques(data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    """
+    Calcule les metriques d'agregation demandees
+    
+    :param data: dictionnaire de DataFrames
+    :return: dictionnaire avec les metriques ajoutees
+    """
+    print("\n" + "="*50)
+    print("TRANSFORMATION: Calcul des metriques")
+    print("="*50)
+    
+    # T3: Chiffre d'affaires par mois
+    if 'fact_order_items' in data:
+        fact = data['fact_order_items']
+        
+        # Groupe par mois et somme les revenus
+        monthly_revenue = fact.groupby('year_month')['item_total'].sum().reset_index()
+        monthly_revenue.columns = ['year_month', 'revenue_total']
+        # Convertit year_month en string pour pouvoir sauvegarder en CSV
+        monthly_revenue['year_month'] = monthly_revenue['year_month'].astype(str)
+        
+        data['monthly_revenue'] = monthly_revenue
+        print(f"\nT3 - Chiffre d'affaires par mois : {monthly_revenue.shape}")
+        print("-"*50)
+
+        print(monthly_revenue.head())
+    
+    
+    # T4: Top 10 categories par revenu
+    # if 'fact_order_items' in data:
+        fact = data['fact_order_items']
+        
+        # Groupe par categorie et somme les revenus
+        top_categories = fact.groupby('product_category_name')['item_total'].sum().reset_index()
+        top_categories.columns = ['product_category', 'revenue']
+        # Trie par revenu decroissant et prend les 10 premiers
+        top_categories = top_categories.sort_values('revenue', ascending=False).head(10)
+        
+        data['top_categories'] = top_categories
+        print(f"\nT4 - Top catégories par revenu.: {top_categories.shape}")
+        print("-"*50)
+        print(top_categories.head())
+    
+        # T5: Delais de livraison moyens par mois
+        if 'fact_order_items' in data and 'delivery_days' in data['fact_order_items'].columns:
+            fact = data['fact_order_items']
+            
+            # Filtre les lignes avec delai de livraison valide
+            fact_with_delivery = fact[fact['delivery_days'].notna()]
+            
+            # Calcule la moyenne des delais par mois
+            delivery_metrics = fact_with_delivery.groupby('year_month')['delivery_days'].mean().reset_index()
+            delivery_metrics.columns = ['year_month', 'avg_delivery_days']
+            delivery_metrics['year_month'] = delivery_metrics['year_month'].astype(str)
+            
+            data['delivery_metrics'] = delivery_metrics
+            print(f"\nT5 - Temps de livraison moyen: {delivery_metrics.shape}")
+            print("-"*50)
+
+            print(delivery_metrics.head())
+        
+        # BONUS: Note moyenne des avis par mois (version compacte)
+        if 'order_reviews' in data and 'orders' in data:
+            reviews = data['order_reviews'].copy()
+            orders_ids = data['orders']['order_id'].unique()
+            
+            # Vérification d'intégrité
+            avis_valides = reviews[reviews['order_id'].isin(orders_ids)]
+            nb_orphelins = len(reviews) - len(avis_valides)
+            
+            if nb_orphelins > 0:
+                print(f"{nb_orphelins} avis orphelins exclus")
+            
+            # Calcul avec la date des avis
+            if 'review_creation_date' in avis_valides.columns:
+                avis_valides['year_month'] = avis_valides['review_creation_date'].dt.to_period('M').astype(str)
+                
+                data['reviews_monthly'] = avis_valides.groupby('year_month').agg(
+                    avg_review_score=('review_score', 'mean'),
+                    review_count=('review_score', 'count')
+                ).reset_index()
+                
+                print(f"\nScore moyen des avis par mois: {data['reviews_monthly'].shape}")
+                print("-" * 50)
+                print(data['reviews_monthly'].head())
+        
+    else: 
+        print("veuillez d'abord construire le jeu de faits")
+        return data
+    return data
+            
+            
 def transform_data(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """
     Docstring for transform
@@ -400,6 +497,10 @@ def transform_data(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     
     # Creer et ajouter le jeu de faits
     dfs = create_fact_order_items_table(data=dfs)
+    
+    #calculer les metriques
+    
+    dfs = calculer_metriques(data= dfs)
 
     return dfs
 
