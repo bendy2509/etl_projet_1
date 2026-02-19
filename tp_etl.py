@@ -1,5 +1,6 @@
 import pandas as pd 
-
+import os
+import sqlite3
 
 def read_csv_file(file_name) -> pd.DataFrame:
     """
@@ -609,7 +610,105 @@ def transform_data(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
 
     return dfs
 
+# ============================================================================
+# PARTIE 3: FONCTIONS DE CHARGEMENT
+# ============================================================================
+def save_to_csv(data: dict[str, pd.DataFrame], tables_config: list, output_dir: str = 'outputs') -> None:
+    """
+    Sauvegarde les DataFrames en fichiers CSV
+    
+    :param data: Dictionnaire de DataFrames
+    :param tables_config: Liste de tuples (key, filename, table_sqlite)
+    :param output_dir: Dossier de sortie
+    """
+    print("\n" + "="*50)
+    print("CHARGEMENT: Sauvegarde en CSV")
+    print("="*50)
+    
+    # Cree le dossier s'il n'existe pas
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"Dossier '{output_dir}' cree")
+    
+    for key, filename, _ in tables_config:
+        if key in data:
+            filepath = os.path.join(output_dir, filename)
+            data[key].to_csv(filepath, index=False)
+            print(f" {filename} sauvegarde ({len(data[key])} lignes)")
 
+
+def save_to_sqlite(data: dict[str, pd.DataFrame], tables_config: list, db_path: str = 'outputs/etl.db') -> None:
+    """
+    Sauvegarde les DataFrames dans une base SQLite
+    
+    :param data: Dictionnaire de DataFrames
+    :param tables_config: Liste de tuples (key, filename, table_sqlite)
+    :param db_path: Chemin vers la base SQLite
+    """
+    print("\n" + "="*50)
+    print("CHARGEMENT: Sauvegarde en SQLite")
+    print("="*50)
+    
+    # Cree le dossier parent si necessaire
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    
+    # Connexion a la base SQLite
+    conn = sqlite3.connect(db_path)
+    
+    for key, _, table_name in tables_config:
+        if key in data:
+            # Copie pour eviter de modifier l'original
+            df_to_save = data[key].copy()
+            
+            # Convertit les types problematiques pour SQLite
+            for col in df_to_save.columns:
+                if 'period' in str(df_to_save[col].dtype).lower():
+                    df_to_save[col] = df_to_save[col].astype(str)
+            
+            # Sauvegarde dans SQLite
+            df_to_save.to_sql(table_name, conn, if_exists='replace', index=False)
+            
+            # Verification
+            cursor = conn.execute(f"SELECT COUNT(*) FROM {table_name}")
+            count = cursor.fetchone()[0]
+            print(f"Table {table_name}: {count} lignes")
+    
+    conn.close()
+    print(f"Base SQLite sauvegardee: {db_path}")
+
+
+def load_outputs(data: dict[str, pd.DataFrame]) -> None:
+    """
+    Fonction principale de chargement
+    
+    :param data: Dictionnaire de DataFrames
+    """
+    print("\n" + "="*60)
+    print("PHASE 3: CHARGEMENT DES DONNEES")
+    print("="*60)
+    
+    # Format: (cle_dans_data, nom_fichier_csv, nom_table_sqlite)
+    tables_config = [
+        ('fact_order_items', 'fact_order_items.csv', 'fact_order_items'),
+        ('monthly_revenue', 'monthly_revenue.csv', 'monthly_revenue'),
+        ('top_categories', 'top_categories.csv', 'top_categories'),
+        ('delivery_metrics', 'delivery_metrics.csv', 'delivery_metrics'),
+        ('reviews_monthly', 'reviews_monthly.csv', 'reviews_monthly'),
+        ('customers', 'dim_customers.csv', 'dim_customers'),
+        ('sellers', 'dim_sellers.csv', 'dim_sellers'),
+        ('products', 'dim_products.csv', 'dim_products'),
+        ('orders_customers', 'orders_customers.csv', 'orders_customers'),
+        ('orders_payments', 'orders_payments.csv', 'orders_payments')
+    ]
+    
+    # Sauvegarde CSV (utilise key et filename)
+    save_to_csv(data, tables_config)
+    
+    # Sauvegarde SQLite (utilise key et table_name)
+    save_to_sqlite(data, tables_config)
+    
+    print("\nChargement termine avec succes!")
+  
 def afficher_menu():
     '''
     Docstring for afficher_menu
@@ -669,7 +768,7 @@ def main():
             if not final_tables:
                 print("Erreur : Transformez d'abord les donnees (Option 4).")
             else:
-                pass
+                load_outputs(final_tables)
 
         elif choix == '0':
             break
