@@ -107,6 +107,19 @@ def detecter_et_supprimer_doublons(df: pd.DataFrame, table_name: str) -> pd.Data
     :param table_name: Le nom de la table
     return: Le dataframe sans doublons
     """
+    if table_name == 'geoloc':
+        # On regarde uniquement la colonne du code postal pour les doublons
+        nb_doublons_zip = df.duplicated(subset=['geolocation_zip_code_prefix']).sum()
+        
+        if nb_doublons_zip > 0:
+            print(f"Geoloc : {nb_doublons_zip} doublons de codes postaux detectes.")
+            print(f"Dimension avant suppression : {df.shape}")
+            # Supprimer tous les doubles de zipcode et garder les premiers
+            df = df.drop_duplicates(subset=['geolocation_zip_code_prefix'], keep='first')
+            print(f"Doublons supprimes. Nouvelle dimension : {df.shape}\n")
+        
+        return df
+    
     # Detecter les doublons
     doublons = df.duplicated()
     nb_doublons = doublons.sum()
@@ -432,7 +445,7 @@ def create_fact_customers_geoloc_table(data: dict[str, pd.DataFrame]) -> dict[st
     
     # JOINTURE
     print("\nCREATION DE LA TABLE DE FAITS")
-    
+
     # Jointure customers avec geoloc
     fact = pd.merge(
         customers,
@@ -457,7 +470,6 @@ def create_fact_customers_geoloc_table(data: dict[str, pd.DataFrame]) -> dict[st
     print("\nVERIFICATIONS FINALES")
     print(f"Dimension finale: {fact.shape}")
     print(f"Colonnes: {fact.columns.tolist()}")
-    print(f"\nApercu des donnees:")
     
     
     # Stocker dans le dictionnaire
