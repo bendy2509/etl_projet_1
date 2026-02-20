@@ -60,17 +60,44 @@ def extract_sources() -> dict[str, pd.DataFrame]:
     return data_dict
 
 
-def parser_date(X) -> pd.Series:
+def parser_date(X: pd.Series) -> pd.Series:
     """
     Docstring for parser_date
-    Pour parser une colonne entiere de date
+    Pour parser une colonne entiere de date, afficher le taux de conversion
+    et le nombre de NaT restants.
     
     :param X: La colonne de date a parser
-    :param date_format: Le format de la date a parser
     return: La date au format datetime de pandas
     """
-    # TODO: La necessite de la fonction
-    return pd.to_datetime(X, errors='coerce')
+    # Recuperer le nom de la colonne
+    col_name = X.name if X.name else "Colonne inconnue"
+    
+    total_lignes = X.shape[0]
+
+    # Compter combien de valeurs reelles on a avant
+    valeurs_presentes_avant = X.notna().sum()
+    
+    # Calculer la quantite na pour le taux
+    total_na_present = total_lignes - valeurs_presentes_avant
+
+    # Conversion avec errors='coerce' pou mettre les erreurs en NaT
+    X_parsed = pd.to_datetime(X, errors='coerce')
+    
+    # Compter apres la conversion
+    valeurs_reussies = X_parsed.notna().sum()
+    nat_restantes = X_parsed.isna().sum()
+    
+    # Calcul du taux de conversion
+    if valeurs_presentes_avant > 0:
+        taux_conversion = (valeurs_reussies / valeurs_presentes_avant) * 100
+    else:
+        taux_conversion = 0.0
+    
+    
+    print(f"Quantite NA present dans '{col_name}': {total_na_present} ({(total_na_present/total_lignes)*100:.2f}%)")
+    print(f"Parsing '{col_name}' : {taux_conversion:.2f}% de succes. NaT restantes : {nat_restantes}\n\n")
+    
+    return X_parsed
 
 
 def parser_date_columns(dfs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
@@ -111,9 +138,10 @@ def detecter_et_supprimer_doublons(df: pd.DataFrame, table_name: str) -> pd.Data
     if table_name == 'geoloc':
         # On regarde uniquement la colonne du code postal pour les doublons
         nb_doublons_zip = df.duplicated(subset=['geolocation_zip_code_prefix']).sum()
-        
+        _percent = (nb_doublons_zip / df.size) * 100
+
         if nb_doublons_zip > 0:
-            print(f"Geoloc : {nb_doublons_zip} doublons de codes postaux detectes.")
+            print(f"Geoloc : {nb_doublons_zip}({_percent:.2f}%) doublons de codes postaux detectes.")
             print(f"Dimension avant suppression : {df.shape}")
             # Supprimer tous les doubles de zipcode et garder les premiers
             df = df.drop_duplicates(subset=['geolocation_zip_code_prefix'], keep='first')
@@ -571,7 +599,6 @@ def calculer_metriques(data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]
                 print(f"\nScore moyen des avis par mois: {data['reviews_monthly'].shape}")
                 print("-" * 50)
                 print(data['reviews_monthly'].head())
-        
     else: 
         print("veuillez d'abord construire le jeu de faits")
         return data
