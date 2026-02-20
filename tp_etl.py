@@ -485,6 +485,7 @@ def create_fact_customers_geoloc_table(data: dict[str, pd.DataFrame]) -> dict[st
     
     return data
 
+
 def calculer_metriques(data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """
     Calcule les metriques d'agregation demandees
@@ -721,6 +722,7 @@ def afficher_menu():
     print("4. Transformer les donnees (Transform)")
     print("5. Charger les donnees transformees (Load CSV/SQLite)")
     print("0. Quitter")
+
 
 def main():
     dfs = {} # Le dictionnaire pour stocker tous les df
