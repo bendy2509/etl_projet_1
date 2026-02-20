@@ -1,30 +1,52 @@
-PROJET ETL OLIST - RAPPORT D'AVANCEMENT
-Date : 17 Fevrier 2026
+PROJET ETL OLIST - RAPPORT FINAL
+Date : 20 Fevrier 2026
 
-1. EXTRACTION (Extract)
------------------------
-- Chargement reussi des 9 fichiers CSV sources (option low_memory activee).
-- Verification des dimensions et des types effectuee pour chaque table.
+1. EXTRACTION (T1)
+------------------
+- Chargement reussi des 9 fichiers CSV sources via Pandas.
+- Optimisation : Utilisation de l'argument low_memory=False pour eviter les avertissements de types.
+- Verification systematique des dimensions (shape) et des types (dtypes).
 
-2. Les Doublons
-    on a trouver 261831 doublons dans la table geoloc, ce qui represente 5.24% de la table.
+2. NETTOYAGE DES DONNEES (T2)
+-----------------------------
+- Doublons : 
+  * Table 'geoloc' : Dedoublonnage cible sur 'geolocation_zip_code_prefix'.
+    - Resultat : 981148 doublons supprimes (19.62% de la table).
+  * Autres tables : Verification globale, aucun doublon parfait significatif.
 
-2. NETTOYAGE (Clean)
---------------------
-- Dates : Conversion de toutes les colonnes temporelles en datetime.
-- Orders :  Conservation des dates de livraison manquantes (NaT) pour ne pas 
-            supprimer les commandes en cours.
-- order_reviews : On a supprimer les colonnes 'review_comment_title' et 'review_comment_message'
+- Conversion des dates (Parsing) :
+  * Toutes les dates converties en datetime (errors='coerce').
+  * Taux de succes de 100% sur les formats existants.
+  
 
-- Products :
-    * On a detecter 2448 valeurs manquantes dans la table Products, soit 0.83% des donnees
-        - On remplace les noms des categories par Inconnu soit 610 de ces valeurs manquantes
-        - et supprime les autres lignes ayant des valeurs manquantes
-    * Suppression ciblee des produits sans poids/dimensions/longueur_nom physiques.
+- Traitement des valeurs manquantes et colonnes inutiles :
+  * order_reviews : Suppression des longs commentaires textuels non analyses.
+  * products : Remplacement de 610 categories manquantes par 'Inconnu'.
+    - Variables numeriques (photos, longueur description) remplies par 0.
+    - Suppression des rares produits sans poids logistique.
+  * Les valeurs manquantes d'origine (ex: 2965 dates de livraison client) sont volontairement 
+    conservees en NaT pour representer les commandes non finalisees.
 
-3. ARCHITECTURE
---------------------
-- Script modulaire avec menu interactif.
-- Gestion centralisee via un dictionnaire de DataFrames.
-- Calcul mathematique precis du taux de remplissage (%) des donnees.
+3. ANALYSE DE QUALITE ET TRANSFORMATION (T3, T4, T5)
+----------------------------------------------------
+- Analyse relationnelle : Creation de la fonction 'analyser_qualite_donnees' pour verifier l'integrite referentielle
+  entre Commandes/Clients et Commandes/Paiements.
 
+- Tables de faits : 
+  * 'fact_order_items' : Enrichissement des lignes de commandes avec les dimensions
+    (orders, customers, sellers, products).
+  * 'fact_customers_geoloc' : Jointure dedoublonnee pour lier les clients a leurs coordonnees.
+
+- Calcul des Metriques :
+  * T3 (Revenu Mensuel) : Agregation de 'item_total' par 'year_month'.
+  * T4 (Top Categories) : Extraction des 10 categories les plus rentables.
+  * T5 (Delai Livraison) : Calcul du temps moyen de livraison par mois en jours.
+  * Bonus : Calcul du score moyen des avis clients par mois.
+
+4. CHARGEMENT / LOAD (T6)
+-------------------------
+-   Exports CSV : Sauvegarde automatisee des tables finales dans le dossier /outputs.
+-   Base de donnees : Creation et remplissage de SQLite (outputs/etl.db) via 'to_sql' en adaptant les types 
+    problematiques (Period) en texte.
+-   Tables chargees : Les dimensions propres (dim_customers, dim_sellers, dim_products), 
+    la table de faits et les aggregations de metriques.

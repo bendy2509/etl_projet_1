@@ -2,3 +2,12 @@
 /outputs/
 outputs/
 
+__pycache__/
+*.py[cod]
+*$py.class
+
+.vscode/
+.notebook/
+.ipynb_checkpoints/
+
+*.db
