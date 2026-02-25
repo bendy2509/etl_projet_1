@@ -51,3 +51,46 @@ Date : 20 Fevrier 2026
     problematiques (Period) en texte.
 -   Tables chargees : Les dimensions propres (dim_customers, dim_sellers, dim_products), 
     la table de faits et les aggregations de metriques.
+2. NETTOYAGE DES DONNEES (T2)
+-----------------------------
+- Doublons : 
+  * Table 'geoloc' : Dedoublonnage cible sur 'geolocation_zip_code_prefix'.
+    - Resultat : 981148 doublons supprimes (19.62% de la table).
+  * Autres tables : Verification globale, aucun doublon parfait significatif.
+
+- Conversion des dates (Parsing) :
+  * Toutes les dates converties en datetime (errors='coerce').
+  * Taux de succes de 100% sur les formats existants.
+  
+
+- Traitement des valeurs manquantes et colonnes inutiles :
+  * order_reviews : Suppression des longs commentaires textuels non analyses.
+  * products : Remplacement de 610 categories manquantes par 'Inconnu'.
+    - Variables numeriques (photos, longueur description) remplies par 0.
+    - Suppression des rares produits sans poids logistique.
+  * Les valeurs manquantes d'origine (ex: 2965 dates de livraison client) sont volontairement 
+    conservees en NaT pour representer les commandes non finalisees.
+
+3. ANALYSE DE QUALITE ET TRANSFORMATION (T3, T4, T5)
+----------------------------------------------------
+- Analyse relationnelle : Creation de la fonction 'analyser_qualite_donnees' pour verifier l'integrite referentielle
+  entre Commandes/Clients et Commandes/Paiements.
+
+- Tables de faits : 
+  * 'fact_order_items' : Enrichissement des lignes de commandes avec les dimensions
+    (orders, customers, sellers, products).
+  * 'fact_customers_geoloc' : Jointure dedoublonnee pour lier les clients a leurs coordonnees.
+
+- Calcul des Metriques :
+  * T3 (Revenu Mensuel) : Agregation de 'item_total' par 'year_month'.
+  * T4 (Top Categories) : Extraction des 10 categories les plus rentables.
+  * T5 (Delai Livraison) : Calcul du temps moyen de livraison par mois en jours.
+  * Bonus : Calcul du score moyen des avis clients par mois.
+
+4. CHARGEMENT / LOAD (T6)
+-------------------------
+-   Exports CSV : Sauvegarde automatisee des tables finales dans le dossier /outputs.
+-   Base de donnees : Creation et remplissage de SQLite (outputs/etl.db) via 'to_sql' en adaptant les types 
+    problematiques (Period) en texte.
+-   Tables chargees : Les dimensions propres (dim_customers, dim_sellers, dim_products), 
+    la table de faits et les aggregations de metriques.
